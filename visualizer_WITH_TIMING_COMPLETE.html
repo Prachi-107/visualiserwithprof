@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" 
+  content="default-src 'none'; 
+           script-src 'nonce-${nonce}'; 
+           style-src 'unsafe-inline' https://fonts.googleapis.com;
+           font-src https://fonts.gstatic.com;
+           img-src data: vscode-resource:;">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NNTrainer Visualizer with Timing</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #060c18;
+    --surface: #0a1220;
+    --border:  #162035;
+    --text:    #dde6f0;
+    --muted:   #4a6080;
+    --dim:     #1a2a40;
+    --accent:  #22d3ee;
+    --font:    'JetBrains Mono', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Topbar ───────────────────────────────── */
+  #topbar {
+    height: 44px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .title { font-family: 'Syne', sans-serif; font-size: 13px; color: var(--accent); font-weight: 800; letter-spacing: 0.5px; }
+  .sep { color: var(--border); font-size: 12px; }
+  .meta { font-size: 10px; color: var(--muted); }
+  #topbar .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-family: var(--font);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    transition: all 0.15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-accent { border-color: var(--accent); color: var(--accent); background: #22d3ee10; }
+  .btn-accent:hover { background: #22d3ee22; }
+
+  /* ── Main Container ───────────────────────– */
+  #container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  #graph-area {
+    flex: 1;
+    background: var(--dim);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #graph-area svg {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  /* ── Detail Panel ─────────────────────────– */
+  #detail-panel {
+    width: 360px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #detail-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  #detail-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    font-size: 10px;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .detail-row:last-child { border-bottom: none; }
+
+  /* ── Timing Panel (NEW) ───────────────────– */
+  #timing-panel {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  #timing-panel.show {
+    display: flex;
+  }
+
+  .timing-header {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .load-timing-btn {
+    background: var(--dim);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-family: var(--font);
+    font-weight: 700;
+  }
+
+  .load-timing-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  #timing-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .timing-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    background: var(--dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 9px;
+    transition: all 0.15s;
+  }
+
+  .timing-item:hover {
+    background: var(--border);
+    border-color: var(--accent);
+  }
+
+  .timing-item.selected {
+    background: #22d3ee22;
+    border-color: var(--accent);
+  }
+
+  .timing-item-name {
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .timing-item-time {
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+
+  .timing-fast {
+    background: #34d39922;
+    color: #34d399;
+  }
+
+  .timing-medium {
+    background: #f59e0b22;
+    color: #f59e0b;
+  }
+
+  .timing-slow {
+    background: #ef444422;
+    color: #ef4444;
+  }
+
+  #timing-detail {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: var(--dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 9px;
+  }
+
+  #timing-detail.show {
+    display: flex;
+  }
+
+  .timing-func-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .timing-func-row:last-child {
+    border-bottom: none;
+  }
+
+  /* ── Scrollbars ───────────────────────────– */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--dim); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="dot"></span>
+  <span class="title">⬡ NNTrainer</span>
+  <span class="sep">│</span>
+  <span id="fileName" class="meta">model.ini</span>
+  <div class="right">
+    <button class="btn btn-accent" id="loadBinBtn">Load .bin</button>
+    <button class="btn btn-accent" id="loadTimingBtn">Load Timing</button>
+  </div>
+</div>
+
+<div id="container">
+  <div id="graph-area">
+    <div id="loading">
+      <div style="font-size: 14px; color: var(--accent); font-weight: 700;">Waiting for .ini file...</div>
+    </div>
+  </div>
+
+  <div id="detail-panel">
+    <div id="detail-header">Layer Details</div>
+    <div id="detail-content">
+      <div style="color: var(--muted); font-size: 9px;">Click a layer to see details</div>
+    </div>
+
+    <!-- NEW: Timing Panel -->
+    <div id="timing-panel">
+      <div class="timing-header">
+        <span>⏱ Timing</span>
+      </div>
+      <div id="timing-list"></div>
+      <div id="timing-detail"></div>
+    </div>
+  </div>
+</div>
+
+<script nonce="${nonce}">
+
+// ════════════════════════════════════════════════════════════════════════════
+// MESSAGING
+// ════════════════════════════════════════════════════════════════════════════
+const vscode = acquireVsCodeApi();
+
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  console.log('[Webview] Received:', msg.type);
+
+  switch(msg.type) {
+    case 'INI_TEXT':
+      handleINI(msg.data);
+      break;
+    case 'BIN_START':
+      document.getElementById('graph-area').innerHTML = 'Loading .bin...';
+      break;
+    case 'BIN_PROGRESS':
+      document.getElementById('graph-area').innerHTML = `Loading ${msg.data.layerName}... ${msg.data.pct}%`;
+      break;
+    case 'BIN_LOADED':
+      handleBINLoaded(msg.data);
+      break;
+    case 'TIMING_LOADED':
+      handleTimingLoaded(msg.data);
+      break;
+    case 'ERROR':
+      alert('Error: ' + msg.data.message);
+      break;
+  }
+});
+
+function postMessage(type, data) {
+  vscode.postMessage({ type, data });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// INI FILE PARSING
+// ════════════════════════════════════════════════════════════════════════════
+function handleINI(data) {
+  document.getElementById('fileName').textContent = data.fileName;
+
+  const lines = data.text.split('\n');
+  let currentSection = null;
+  const layers = [];
+  const config = {};
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      currentSection = trimmed.slice(1, -1);
+      continue;
+    }
+
+    if (currentSection && trimmed.includes('=')) {
+      const [key, ...valParts] = trimmed.split('=');
+      const value = valParts.join('=').trim();
+      
+      if (currentSection === 'Model') {
+        config[key.trim()] = value;
+      } else {
+        // This is a layer
+        if (key.trim() === 'type') {
+          layers.push({
+            name: currentSection,
+            type: value,
+            props: {}
+          });
+        } else if (layers.length > 0) {
+          layers[layers.length - 1].props[key.trim()] = value;
+        }
+      }
+    }
+  }
+
+  renderGraph(layers);
+  window.layers = layers.map(l => ({
+    id: l.name,
+    fullName: l.name,
+    weightTensors: inferWeights(l)
+  }));
+
+  // Enable Load .bin button
+  document.getElementById('loadBinBtn').onclick = () => {
+    postMessage('PICK_BIN', { layers: window.layers });
+  };
+
+  // Enable Load Timing button
+  document.getElementById('loadTimingBtn').onclick = () => {
+    postMessage('LOAD_TIMING', {});
+  };
+}
+
+function inferWeights(layer) {
+  // Simplified: return placeholder tensors
+  const type = layer.type;
+  const tensors = [];
+
+  if (type.includes('conv') || type === 'Conv2D') {
+    tensors.push({
+      name: 'kernel',
+      shape: [3, 3, 1, 32],
+      bytes: 3 * 3 * 1 * 32 * 4
+    });
+    tensors.push({
+      name: 'bias',
+      shape: [32],
+      bytes: 32 * 4
+    });
+  } else if (type === 'FullyConnected' || type.includes('dense')) {
+    tensors.push({
+      name: 'weight',
+      shape: [512, 256],
+      bytes: 512 * 256 * 4
+    });
+    tensors.push({
+      name: 'bias',
+      shape: [256],
+      bytes: 256 * 4
+    });
+  }
+
+  return tensors;
+}
+
+function renderGraph(layers) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 800 ${layers.length * 60 + 40}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+
+  let y = 40;
+  for (const layer of layers) {
+    const color = getLayerColor(layer.type);
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '50');
+    rect.setAttribute('y', String(y));
+    rect.setAttribute('width', '700');
+    rect.setAttribute('height', '50');
+    rect.setAttribute('rx', '4');
+    rect.setAttribute('fill', color);
+    rect.setAttribute('opacity', '0.3');
+    rect.setAttribute('stroke', color);
+    rect.setAttribute('stroke-width', '2');
+    rect.style.cursor = 'pointer';
+    rect.onclick = () => showLayerDetail(layer);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '70');
+    text.setAttribute('y', String(y + 28));
+    text.setAttribute('fill', color);
+    text.setAttribute('font-size', '14');
+    text.setAttribute('font-weight', 'bold');
+    text.textContent = `${layer.name} (${layer.type})`;
+
+    svg.appendChild(rect);
+    svg.appendChild(text);
+    y += 60;
+  }
+
+  document.getElementById('graph-area').innerHTML = '';
+  document.getElementById('graph-area').appendChild(svg);
+}
+
+function getLayerColor(type) {
+  if (type.includes('conv')) return '#22d3ee';
+  if (type.includes('dense') || type.includes('fully')) return '#a78bfa';
+  if (type.includes('flatten')) return '#86efac';
+  return '#fbbf24';
+}
+
+function showLayerDetail(layer) {
+  const html = `
+    <strong>${layer.name}</strong><br/>
+    <div class="detail-row">
+      <span>Type:</span>
+      <span>${layer.type}</span>
+    </div>
+    ${Object.entries(layer.props).map(([k, v]) => 
+      `<div class="detail-row"><span>${k}:</span><span>${v}</span></div>`
+    ).join('')}
+  `;
+  document.getElementById('detail-content').innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BIN FILE HANDLING (simplified)
+// ════════════════════════════════════════════════════════════════════════════
+function handleBINLoaded(data) {
+  document.getElementById('graph-area').innerHTML = '✓ .bin loaded<br/>Showing weight statistics';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NEW: TIMING DATA HANDLING
+// ════════════════════════════════════════════════════════════════════════════
+function handleTimingLoaded(timingData) {
+  if (!timingData || !timingData.layers) {
+    alert('No timing data');
+    return;
+  }
+
+  const panel = document.getElementById('timing-panel');
+  const list = document.getElementById('timing-list');
+  panel.classList.add('show');
+
+  // Clear list
+  list.innerHTML = '';
+
+  // Calculate stats for color coding
+  const times = timingData.layers.map(l => l.total_ms);
+  const maxTime = Math.max(...times);
+  const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+
+  // Render layer list
+  timingData.layers.forEach((layer) => {
+    let category = 'fast';
+    if (layer.total_ms > maxTime * 0.75) category = 'slow';
+    else if (layer.total_ms > avgTime * 1.2) category = 'medium';
+
+    const item = document.createElement('div');
+    item.className = 'timing-item';
+    item.innerHTML = `
+      <span class="timing-item-name">${layer.name}</span>
+      <span class="timing-item-time timing-${category}">${layer.total_ms.toFixed(3)} ms</span>
+    `;
+
+    item.onclick = () => {
+      document.querySelectorAll('.timing-item').forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+      showTimingDetail(layer);
+    };
+
+    list.appendChild(item);
+  });
+
+  alert('✓ Timing data loaded! See ⏱ panel on the right');
+}
+
+function showTimingDetail(layer) {
+  const detail = document.getElementById('timing-detail');
+  detail.innerHTML = `
+    <div class="timing-func-row">
+      <span>Forward:</span>
+      <span>${layer.forward_ms.toFixed(3)} ms</span>
+    </div>
+    <div class="timing-func-row">
+      <span>Backward:</span>
+      <span>${layer.backward_ms.toFixed(3)} ms</span>
+    </div>
+    <div class="timing-func-row">
+      <span>Weight Update:</span>
+      <span>${layer.weight_update_ms.toFixed(3)} ms</span>
+    </div>
+  `;
+  detail.classList.add('show');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// INITIALIZATION
+// ════════════════════════════════════════════════════════════════════════════
+postMessage('READY', {});
+
+</script>
+
+</body>
+</html>
